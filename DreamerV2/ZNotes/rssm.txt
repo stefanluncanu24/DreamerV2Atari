@@ -1,0 +1,71 @@
+### Explanation of `rssm.py`
+
+This file implements the Recurrent State-Space Model (RSSM), a core component of the DreamerV2 agent. The RSSM is a world model that learns to predict the dynamics of an environment in a compressed latent space.
+
+#### Key Components:
+
+1.  **`RSSM` Class:**
+    *   This is the main class for the model, inheriting from `torch.nn.Module`.
+    *   It encapsulates all the components of the RSSM.
+
+2.  **`__init__` (Initialization):**
+    *   **Parameters:**
+        *   `action_dim`: The size of the action space.
+        *   `embed_dim`: The size of the embeddings from the observation encoder.
+        *   `device`: The PyTorch device (CPU or GPU).
+        *   `deter_size`: The size of the deterministic hidden state `h` (default: 1024).
+        *   `category_size`: The number of categorical distributions for the stochastic state `z` (default: 32).
+        *   `class_size`: The number of classes within each categorical distribution (default: 32).
+        *   `alpha`: The balancing factor for the KL divergence loss (default: 0.8).
+        *   `latent_overshoot`: A parameter for training, not used directly in this module but stored for reference.
+    *   **Sub-models:**
+        *   `rnn`: A GRUCell that updates the deterministic state `h_t` based on the previous state `h_{t-1}`, previous stochastic state `z_{t-1}`, and previous action `a_{t-1}`.
+        *   `repr_model` (Representation Model): This is the posterior model. It computes the stochastic state `z_t` based on the current deterministic state `h_t` and the current observation embedding `o_t`.
+        *   `trans_model` (Transition Model): This is the prior model. It predicts the next stochastic state `z_t` based only on the current deterministic state `h_t`.
+
+3.  **`initial_state(batch_size)`:**
+    *   This method generates a zero-initialized tuple of tensors for the initial deterministic state `h_0` and stochastic state `z_0`.
+
+4.  **`forward(obs_embed, action, prev_state, prev_latent)`:**
+    *   This is the main method for stepping the model forward in time when a real observation is available.
+    *   It first updates the deterministic state `h_t` using the RNN.
+    *   Then, it computes the posterior distribution for `z_t` using the `repr_model` and the observation embedding. It samples `z_t` from this posterior.
+    *   It also computes the prior distribution for `z_t` using the `trans_model`.
+    *   Finally, it calculates the KL divergence loss between the posterior and prior distributions, using KL-balancing.
+    *   It returns the new states `h_t`, `z_t`, and the `kl_loss`.
+
+5.  **`imagine(action, prev_state, prev_latent)`:**
+    *   This method is used for planning and long-term prediction inside the learned world model.
+    *   It works similarly to `forward` but without an observation.
+    *   It updates the deterministic state `h_t` using the RNN.
+    *   It then samples the next stochastic state `z_t` from the *prior* distribution computed by the `trans_model`. This is because there is no observation to inform a posterior.
+    *   It returns the imagined next states `h_t` and `z_t`.
+
+6.  **`kl_divergence(post_dist, prior_dist)`:**
+    *   This method implements the KL-balancing technique.
+    *   It computes two KL divergence terms:
+        1.  `kl_post`: `KL(posterior || stop_gradient(prior))`. This term encourages the posterior to match the prior.
+        2.  `kl_prior`: `KL(stop_gradient(posterior) || prior)`. This term encourages the prior to match the posterior.
+    *   The `stop_gradient` operation is used to prevent the gradients from flowing back in a way that would cause the two distributions to chase each other, which can lead to instability.
+    *   The final loss is a weighted average of these two terms, controlled by `alpha`. This helps to prevent "posterior collapse," where the KL loss goes to zero and the model doesn't learn anything useful.
+
+
+### Notes on Deterministic and Stochastic State Sizes
+
+- **Deterministic State (`h`)**:  
+  The size of the deterministic state `h` is set by `deter_size` (default: 1024). This is a dense, continuous vector maintained by the GRUCell.
+
+- **Stochastic State (`z`)**:  
+  The stochastic state `z` is represented as a concatenation of `category_size` categorical variables, each with `class_size` possible values.  
+  For example, with `category_size=32` and `class_size=32`, the *flattened* size of `z` is `32 * 32 = 1024`.  
+  However, `z` is not a dense vector of 1024 real values. Instead, it is a concatenation of 32 one-hot vectors (each of length 32), so only 32 out of 1024 entries are 1, the rest are 0.
+
+- **Are `h` and `z` the same size?**  
+  They can be, but this is a design choice.  
+  - `h` is a dense, continuous vector of length `deter_size`.
+  - `z` is a concatenation of one-hot vectors, with length `category_size * class_size`.
+  - The *information content* of `z` is only `category_size` discrete choices, not 1024 real values.
+
+- **Summary:**  
+  While the flattened size of `z` can match the size of `h`, their roles and representations are different. `h` is continuous and dense; `z` is discrete and sparse (one-hot encoded).
+
