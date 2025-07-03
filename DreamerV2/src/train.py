@@ -144,7 +144,7 @@ def main(config):
                     
                     recon_pred = decoder(latent_states.view(-1, latent_states.shape[-1])) 
                     # recon_loss = perceptual_loss_fn(recon_pred, obs_batch.view(-1, *obs_shape))  # Using VGG perceptual loss
-                    recon_loss = F.mse_loss(recon_pred, obs_batch.view(-1, *obs_shape) + 0.5)
+                    recon_loss = F.mse_loss(recon_pred, obs_batch.view(-1, *obs_shape))
 
                     if config['logging'].get('save_recon_images', False) and frame >= config['logging'].get('save_recon_after_frames', 0) and frame <= config['logging'].get('stop_save_recon_after_frames', np.inf):
                         save_reconstruction_predictions(
