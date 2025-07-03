@@ -93,7 +93,7 @@ class RSSM(nn.Module):
         prev_h: torch.Tensor,
         prev_z: torch.Tensor,
     ):
-        h, z_post, z_prior, kl_loss = self.obs_step(obs_embed, action, prev_h, prev_z)
+        h, z_post, kl_loss = self.obs_step(obs_embed, action, prev_h, prev_z)
         return h, z_post, kl_loss
 
     def imagine(
@@ -121,27 +121,30 @@ class RSSM(nn.Module):
         post_logits = self.ts_post_logits(post_in).view(-1, self.category_size, self.class_size)
 
         # Sample and calculate KL divergence
-        post_dist = OneHotCategorical(logits=post_logits)
-        prior_dist = OneHotCategorical(logits=prior_logits)
-        
         z_post = self._straight_through(post_logits).view(-1, self.stoch_size)
-        z_prior = self._straight_through(prior_logits).view(-1, self.stoch_size)
 
-        kl_loss = self.kl_divergence(post_dist, prior_dist) * self.kl_beta
-        return h, z_post, z_prior, kl_loss
+        kl_loss = self.kl_divergence(post_logits, prior_logits) * self.kl_beta
+        return h, z_post, kl_loss
 
-    def kl_divergence(self, post_dist, prior_dist):
-        sg_prior_dist = OneHotCategorical(logits=prior_dist.logits.detach())
-        sg_post_dist = OneHotCategorical(logits=post_dist.logits.detach())
+    def kl_divergence(self, post_logits, prior_logits):
+        post_dist = torch.distributions.Categorical(logits=post_logits)
+        prior_dist = torch.distributions.Categorical(logits=prior_logits)
+        
+        # The original implementation was incorrect. .detach() is a tensor method.
+        # The correct way is to detach the logits *before* creating the distribution.
+        prior_dist_detached = torch.distributions.Categorical(logits=prior_logits.detach())
+        post_dist_detached = torch.distributions.Categorical(logits=post_logits.detach())
 
-        kl_post = torch.distributions.kl.kl_divergence(post_dist, sg_prior_dist).mean()
-        kl_prior = torch.distributions.kl.kl_divergence(sg_post_dist, prior_dist).mean()
+        kl_post = torch.distributions.kl.kl_divergence(post_dist, prior_dist_detached).mean()
+        kl_prior = torch.distributions.kl.kl_divergence(post_dist_detached, prior_dist).mean()
 
-        return (1 - self.kl_balancing_alpha) * kl_post + self.kl_balancing_alpha * kl_prior
+        # Balancing using stop-gradient
+        kl_loss = (1 - self.kl_balancing_alpha) * kl_post + self.kl_balancing_alpha * kl_prior
+        return kl_loss
 
     def _straight_through(self, logits: torch.Tensor) -> torch.Tensor:
-        probs = F.softmax(logits, dim=-1)
-        hard = F.one_hot(probs.argmax(-1), self.class_size)
-        hard = hard.type_as(probs)
-        return (hard - probs).detach() + probs
-
+        dist = torch.distributions.Categorical(logits=logits)
+        sample = dist.sample()
+        hard = F.one_hot(sample, self.class_size).float()
+        soft = dist.probs
+        return (hard - soft).detach() + soft
