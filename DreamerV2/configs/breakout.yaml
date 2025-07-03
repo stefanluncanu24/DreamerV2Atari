@@ -36,7 +36,7 @@ model:
 # Training configuration
 training:
   total_env_frames: 10000000
-  burn_in_frames: 5
+  burn_in_frames: 50000
   batch_size: 50
   world_model_update_interval: 16
   world_model_lr: 2e-4
