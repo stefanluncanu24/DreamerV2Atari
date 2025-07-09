@@ -2,7 +2,7 @@
 
 This is a PyTorch implementation of the DreamerV2 algorithm. The project is currently configured to train an agent on the Atari games Breakout and Pong.
 
-To run: python -m src.train --config configs\breakout.yaml
+To run: accelerate launch --num_processes=3 --module src.train --config configs/breakout.yaml
 
 ## Project Status
 
