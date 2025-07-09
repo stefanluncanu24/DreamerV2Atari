@@ -31,7 +31,7 @@ Here is a breakdown of the important files and directories in this project:
 │   └── utils/
 │       ├── tools.py        # Helper functions (e.g., lambda_return)
 │       ├── image_saver.py  # Utility for saving reconstructed images
-│       └── perceptual_loss.py # VGG perceptual loss implementation (an idea but is commented)
+│ 
 └── README.md               # This file
 ```
 
